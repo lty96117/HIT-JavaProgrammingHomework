@@ -2,8 +2,6 @@
  *
  * */
 import java.lang.Object;
-//import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
 
 import java.awt.Container;
 import java.awt.Font;
@@ -14,6 +12,8 @@ import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
 
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 
@@ -67,17 +67,6 @@ class Log
 	}
 
 	public static void o(Object o){
-		/* try{
-			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-			ObjectOutputStream out = new ObjectOutputStream(buffer);
-			out.writeObject(o);
-			out.close();
-			byte[] raw = buffer.toByteArray();
-			String output = new String(raw);
-			System.out.println(output);
-		} catch(IOException e){
-			e.printStackTrace();
-		} */
 		System.out.println(o);
 	}
 }
@@ -101,17 +90,109 @@ public class chat
 		chat thisisaclasschat = new chat(port);
 	}	
 
-	JFrame mframe = new JFrame();
-	JTextField namefield = new JTextField(defaultname);
-	JTextField addrfield = new JTextField();
-	JLabel colonlabel = new JLabel(":");
-	JTextField portfield = new JTextField();
-	JButton startbutton = new JButton("\u804A");
+	static JFrame mframe = new JFrame();
+	static JTextField namefield = new JTextField(defaultname);
+	static JTextField addrfield = new JTextField();
+	static JLabel colonlabel = new JLabel(":");
+	static JTextField portfield = new JTextField();
+	static JButton startbutton = new JButton("\u804A");
 
 	public chat(){
 		System.out.println("Usage: java chat <yourPort>");
 	}
-
+	
+	private static class portListener extends Thread {
+		private DatagramSocket socket = null;
+		public portListener(int port){
+			try{
+				InetSocketAddress in4 = new InetSocketAddress("0.0.0.0", port);
+				InetSocketAddress in6 = new InetSocketAddress("::", port);
+				socket = new DatagramSocket(port);
+				try{		
+					socket.bind(in4);
+				} catch(SocketException e){
+					Log.o(in4);
+				}
+				try{
+					socket.bind(in6);
+				} catch(SocketException e){
+					Log.o(in6);
+				}
+				socket.setSoTimeout(1000);
+			} catch(SocketException e){
+				e.printStackTrace();
+			}
+			if(socket == null)
+				System.exit(1);
+		}
+		
+		public void run(){
+			ShakeMessage rdata;
+			ShakeMessage wdata = new ShakeMessage();
+			byte[] buf = new byte[1024];
+			DatagramPacket packet = new DatagramPacket(buf, buf.length);
+			
+			try{ while(true){
+				try{
+					socket.receive(packet);
+				} catch(SocketTimeoutException e){
+					continue;
+				}
+				try{
+					ByteArrayInputStream baos = new ByteArrayInputStream(buf);
+					ObjectInputStream oos = new ObjectInputStream(baos);
+					rdata = (ShakeMessage)oos.readObject();
+				} catch(IOException e){
+					e.printStackTrace();
+					continue;
+				} catch(ClassNotFoundException e){
+					e.printStackTrace();
+					continue;
+				}	
+				
+				InetAddress client = packet.getAddress();
+				// accept?
+				int n = JOptionPane.showConfirmDialog(null,
+						"Chat from " + rdata.name + "(" + client.toString() + ")",
+						"Accept?",
+						JOptionPane.YES_NO_OPTION);
+				if(n == JOptionPane.NO_OPTION){
+					continue;
+				}
+				
+				// start chat
+				if(rdata.port == 0)
+					rdata.port = ((InetSocketAddress)(packet.getSocketAddress())).getPort();
+				if(rdata.name == null || rdata.name.equals(""))
+					rdata.name = defaultname;
+				
+				DatagramSocket s = new DatagramSocket();
+				wdata.port = ((InetSocketAddress)(s.getLocalSocketAddress())).getPort();
+				if(namefield.getText().equals(""))
+					wdata.name = defaultname;
+				else
+					wdata.name = namefield.getText();
+				if(s.getLocalSocketAddress() == packet.getSocketAddress() 
+					&& wdata.port == rdata.port){
+					Log.o("Loop!");
+				}
+				Log.o("Local port : " + wdata.port);
+				Log.o("Remote port : " + rdata.port);
+				
+				try{
+					s.connect(client, rdata.port);
+					ObjectOverUdp.sendObject(s, wdata, client, rdata.port);
+					chatwindow cw = new chatwindow(s, client, rdata.port, rdata.name);
+				} catch(SocketException e){
+					e.printStackTrace();
+					break;
+				} 
+			} }catch(IOException e){
+				e.printStackTrace();
+			}
+		}
+	}
+	
 	public chat(int port){
 		startbutton.setPreferredSize(new Dimension(50, 30));
 		startbutton.setMargin(new Insets(0,-20,0,-20));
@@ -156,107 +237,7 @@ public class chat
 		mframe.setSize(mpanel.getPreferredSize());
 		mframe.setVisible(true);
 
-		startListening(port);
-	}
-
-	private void startListening(int port){
-		//listening
-		DatagramSocket socket = null;
-		try{
-			//InetSocketAddress in = new InetSocketAddress(InetAddress.getLocalHost(), port);
-			InetSocketAddress in4 = new InetSocketAddress("0.0.0.0", port);
-			InetSocketAddress in6 = new InetSocketAddress("::", port);
-			//socket = new DatagramSocket();
-			socket = new DatagramSocket(port);
-			try{		
-				socket.bind(in4);
-			} catch(SocketException e){
-				Log.o(in4);
-			}
-
-			try{
-				socket.bind(in6);
-			} catch(SocketException e){
-				Log.o(in6);
-			}
-			//System.out.println("\n\n\n\nzzzz\n\n\n\n"); // if output "zzzz", it works
-			
-			socket.setSoTimeout(1000);
-		} catch(SocketException e){
-			e.printStackTrace();
-		}
-		if(socket == null)
-			System.exit(1);
-		byte[] buf = new byte[1024];
-		ShakeMessage rdata;
-		ShakeMessage wdata = new ShakeMessage();
-		try{ while(true){
-			DatagramPacket packet = new DatagramPacket(buf, buf.length);
-			try{
-				socket.receive(packet);
-			} catch(SocketTimeoutException e){
-				continue;
-			} catch(IOException e){
-				e.printStackTrace();
-			}
-			//Log.o(new String(packet.getData()));
-
-			// parse packet
-			try{
-				ByteArrayInputStream baos = new ByteArrayInputStream(buf);
-				ObjectInputStream oos = new ObjectInputStream(baos);
-				rdata = (ShakeMessage)oos.readObject();
-			} catch(IOException e){
-				e.printStackTrace();
-				continue;
-			} catch(ClassNotFoundException e){
-				e.printStackTrace();
-				continue;
-			}
-			if(rdata.port == 0)
-				rdata.port = ((InetSocketAddress)(packet.getSocketAddress())).getPort();
-			if(rdata.name == null || rdata.name.equals(""))
-				rdata.name = defaultname;
-			
-			InetAddress client = packet.getAddress();
-			// accept?
-			int n = JOptionPane.showConfirmDialog(null,
-					"Chat from " + rdata.name + "(" + client.toString() + ")",
-					"Accept?",
-					JOptionPane.YES_NO_OPTION);
-			if(n == JOptionPane.NO_OPTION){
-				continue;
-			}
-
-			DatagramSocket s = new DatagramSocket();
-			wdata.port = ((InetSocketAddress)(s.getLocalSocketAddress())).getPort();
-			if(namefield.getText().equals(""))
-				wdata.name = defaultname;
-			else
-				wdata.name = namefield.getText();
-			Log.o("Local port : " + wdata.port);
-			try{
-				Log.o("Remote port : " + rdata.port);
-				s.connect(client, rdata.port);
-				if(s.isConnected() == false)
-					s.close();
-				ObjectOverUdp.sendObject(s, wdata, client, rdata.port);
-
-				chatwindow cw = new chatwindow(s, client, rdata.port, rdata.name);
-			} catch(SocketException e){
-				e.printStackTrace();
-				s.close();
-			} catch(IOException e){
-				e.printStackTrace();
-			} finally {
-				continue;
-			}
-		} } catch(SocketException e){
-			e.printStackTrace();
-		} finally {
-			socket.close();
-		}
-		socket.close();
+		new portListener(port).start();
 	}
 
 	private void startChat(){
@@ -283,9 +264,9 @@ public class chat
 		Log.o("Local port : " + data.port);
 		data.name = namefield.getText().equals("") ? defaultname : namefield.getText();
 		try{
-			socket.connect(serv);
+			// socket.connect(serv);
 			ObjectOverUdp.sendObject(socket, data, serv);
-			socket.disconnect();
+			// socket.disconnect();
 			data = (ShakeMessage)ObjectOverUdp.recvObject(socket);
 			//Log.o(data);
 		} catch(IOException e){
@@ -306,7 +287,7 @@ public class chat
 			data.name = defaultname;
 	
 		chatwindow cw = new chatwindow(socket, serv.getAddress(), data.port, data.name);
-		socket.close();
+		// socket.close();
 	}
 }
 
@@ -323,7 +304,7 @@ class ObjectOverUdp
 			//Log.o(packet.getSocketAddress());
 			sock.send(packet);
 		} catch(SocketException e){
-			e.printStackTrace();
+			// e.printStackTrace();
 			throw e;
 		} catch(IOException e){
 			throw e;
@@ -340,7 +321,7 @@ class ObjectOverUdp
 			DatagramPacket packet = new DatagramPacket(buf, buf.length, serv, port);
 			sock.send(packet);
 		} catch(SocketException e){
-			e.printStackTrace();
+			// e.printStackTrace();
 			throw e;
 		} catch(IOException e){
 			throw e;
@@ -359,7 +340,8 @@ class ObjectOverUdp
 		} catch(SocketTimeoutException e){
 			throw e;
 		} catch(SocketException e){
-			e.printStackTrace();
+			//e.printStackTrace();
+			sock.close();
 			throw e;
 		} catch(IOException e){
 			throw e;
@@ -388,19 +370,19 @@ class messageStructure extends fontStructure
 	public String message;
 }
 
-class chatwindow
+class chatwindow implements Runnable
 {
 	private static final String[] fontlist = {"Microsoft YaHei", "Ubuntu"};
 	private static final String[] colorlist = {"black", "red", "blue", "green", "gray"};
 	private static final Color[] colorlist_map = {Color.black, Color.red, Color.blue, Color.green, Color.gray};
 	private static final String[] sizelist = {"16", "20", "24", "28", "32"};
 	
-	private fontStructure defaultfont = new fontStructure();
-	private fontStructure defaultfontforme = new fontStructure();
-	private fontStructure defaultfontfailed = new fontStructure();
+	private static fontStructure defaultfont = new fontStructure();
+	private static fontStructure defaultfontforme = new fontStructure();
+	private static fontStructure defaultfontfailed = new fontStructure();
 
-	private String he;
-	private String me;
+	private static String he;
+	private static String me;
 
 	private static final String sendfailure = "\u53D1\u9001\u5931\u8D25";
 
@@ -421,14 +403,44 @@ class chatwindow
 		chatwin.setTitle("\u4E0E " + name + "(" + host + ")" + " \u804A\u5929");
 	}
 
+	public void run(){
+		messageStructure m = null;
+		try{
+			socket.setSoTimeout(1000);
+		} catch(SocketException e){
+			e.printStackTrace();
+		}
+		try{ while(true){
+			try{
+				m = (messageStructure)ObjectOverUdp.recvObject(socket);
+			} catch(SocketTimeoutException e){
+				continue;
+			}
+			
+			if(m == null)
+				continue;
+				
+			DateFormat dateFormat = new SimpleDateFormat("  yyyy-MM-dd HH:mm:ss");
+			Date date = new Date();
+			addChatRow(he + dateFormat.format(date), defaultfont);
+			addChatRow(m);
+		} } catch(SocketException e){
+			e.printStackTrace();
+			socket.close();
+		} catch(IOException e){
+			// something wrong?
+			e.printStackTrace();
+		} 
+	}
+	
 	public chatwindow(DatagramSocket from, InetAddress addr, int port, String he){
 		// ...
 		socket = from;
 		address = new InetSocketAddress(addr, port);
-		Log.o(from);
-		Log.o(addr);
-		Log.o(String.valueOf(port));
-		Log.o(he);
+		//Log.o(from);
+		//Log.o(addr);
+		//Log.o(String.valueOf(port));
+		//Log.o(he);
 
 		// default
 		defaultfont.ff = fontlist[0];
@@ -445,7 +457,12 @@ class chatwindow
 
 		// Initialization
 		chatwin = new JFrame();
-		chatwin.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		//chatwin.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		chatwin.addWindowListener(new WindowAdapter(){
+			public void windowClosing(WindowEvent e){
+				socket.close();
+			}
+		});
 		setTitle(he, addr.toString());
 
 		fontselect.setPreferredSize(new Dimension(200, 20));
@@ -521,11 +538,10 @@ class chatwindow
 		chatwin.setSize(mpanel.getPreferredSize());
 		chatwin.setVisible(true);
 
-		Log.o("zzzzzzz");
 		// one more thread ?
-		startListening();
+		new Thread(this).start();
 	}
-
+	
 	private void addChatRow(String text, fontStructure f){
 		SimpleAttributeSet set = new SimpleAttributeSet();
 		StyleConstants.setFontFamily(set, f.ff);
@@ -574,7 +590,7 @@ class chatwindow
 		DateFormat dateFormat = new SimpleDateFormat("  yyyy-MM-dd HH:mm:ss");		
 		Date date = new Date();
 		addChatRow(me + dateFormat.format(date), defaultfontforme);
-		//Log.o(font);//font.writeObject(System.out);//Log.o(font.newInstance());//System.out.println(font);
+
 		messageStructure m = new messageStructure();
 		m.ff = font.ff;
 		m.fc = font.fc;
@@ -587,40 +603,7 @@ class chatwindow
 		} catch(IOException e){
 			e.printStackTrace();
 			addChatRow(sendfailure, defaultfontfailed);
-		} //catch(SocketException e){
-		//	e.printStackTrace();
-		//	addChatRow(sendfailure, defaultfontfailed);
-		//} 
-	}
-
-	private void startListening(){
-		messageStructure m;
-		try{
-			socket.setSoTimeout(1000);
-		} catch(SocketException e){
-			e.printStackTrace();
-		}
-
-		while(true) {
-			try{
-				m = (messageStructure)ObjectOverUdp.recvObject(socket);
-			} catch(SocketTimeoutException e){
-				continue;
-			} catch(IOException e){
-				// something wrong?
-				e.printStackTrace();
-				break;
-			} 
-			if(m == null)
-				continue;
-			Log.o(m.ff);
-			Log.o(m.fc);
-			Log.o(m.fs);
-			DateFormat dateFormat = new SimpleDateFormat("  yyyy-MM-dd HH:mm:ss");
-			Date date = new Date();
-			addChatRow(he + dateFormat.format(date), defaultfont);
-			addChatRow(m);
-		}
+		} 
 	}
 }
 
