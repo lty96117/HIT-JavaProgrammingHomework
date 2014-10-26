@@ -506,6 +506,7 @@ class chatwindow implements Runnable
 				// callback function is better
 				// the following is awful...
 				sendMessage(sendtext.getText());
+				sendtext.setText("");
 			}
 		});
 
