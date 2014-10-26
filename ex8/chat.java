@@ -235,6 +235,7 @@ public class chat
 		mframe.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		mframe.add(mpanel);
 		mframe.setSize(mpanel.getPreferredSize());
+		mframe.setTitle(String.valueOf(port));
 		mframe.setVisible(true);
 
 		new portListener(port).start();
